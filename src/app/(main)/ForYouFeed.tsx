@@ -1,19 +1,46 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { PostData } from "@/lib/types";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { PostsPage } from "@/lib/types";
 import Post from "@/components/posts/Post";
 import { Loader2 } from "lucide-react";
 import kyInstance from "@/lib/ky";
+import InfiniteScrollContainer from "@/components/InfiniteScrollContainer";
+import PostsLoadingSkeleton from "@/components/posts/PostsLoadingSkeleton";
 
 export default function ForYouFeed() {
-  const { data, status } = useQuery<PostData[]>({
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetching,
+    isFetchingNextPage,
+    status,
+  } = useInfiniteQuery({
     queryKey: ["post-feed", "for-you"],
-    queryFn: kyInstance.get("/api/posts/for-you").json<PostData[]>
+    queryFn: ({ pageParam }) =>
+      kyInstance
+        .get(
+          "/api/posts/for-you",
+          pageParam ? { searchParams: { cursor: pageParam } } : {},
+        )
+        .json<PostsPage>(),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
   });
 
+  const posts = data?.pages.flatMap((page) => page.posts) || [];
+
   if (status === "pending") {
-    return <Loader2 className="mx-auto animate-spin" />;
+    return <PostsLoadingSkeleton />;
+  }
+
+  if (status === "success" && !posts.length && !hasNextPage) {
+    return (
+      <p className="text-center text-muted-foreground">
+        No one has posted anything yet.
+      </p>
+    );
   }
 
   if (status === "error") {
@@ -25,10 +52,14 @@ export default function ForYouFeed() {
   }
 
   return (
-    <div className="space-y-5">
-      {data.map((post) => (
+    <InfiniteScrollContainer
+      onBottomReached={() => hasNextPage && !isFetching && fetchNextPage()}
+      className="space-y-5"
+    >
+      {posts.map((post) => (
         <Post key={post.id} post={post} />
       ))}
-    </div>
+      {isFetchingNextPage && <Loader2 className="mx-auto my-3 animate-spin" />}
+    </InfiniteScrollContainer>
   );
 }
